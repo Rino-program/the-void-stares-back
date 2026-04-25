@@ -667,6 +667,167 @@ class ArcBurst {
   }
 }
 
+// ── LissajousGhost ────────────────────────────────────────────────────────────
+// Parametric Lissajous figure whose phase slowly drifts — alien loop patterns.
+class LissajousGhost {
+  constructor() { this.reset(); }
+  reset() {
+    this.x      = rand(0, W);
+    this.y      = rand(0, H);
+    this.rx     = rand(25, 130);
+    this.ry     = rand(25, 130);
+    this.a      = 1 + randI(5);
+    this.b      = 1 + randI(5);
+    this.delta  = rand(0, Math.PI * 2);
+    this.ddelta = rand(0.004, 0.018);
+    this.hue    = hshift(rand(0, 360));
+    this.alpha  = rand(0.05, 0.28);
+    this.lw     = rand(0.4, 2);
+    this.vx     = rand(-0.55, 0.55);
+    this.vy     = rand(-0.55, 0.55);
+    this.life   = 0;
+    this.max    = rand(500, 1400);
+  }
+  tick() {
+    this.delta = (this.delta + this.ddelta) % (Math.PI * 2);
+    this.hue   = (this.hue + 0.14) % 360;
+    this.x     = (this.x + this.vx + W) % W;
+    this.y     = (this.y + this.vy + H) % H;
+    if (++this.life > this.max) this.reset();
+  }
+  draw(ctx) {
+    const fade = Math.sin(Math.PI * this.life / this.max);
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.globalAlpha = this.alpha * fade;
+    ctx.strokeStyle = `hsl(${this.hue},75%,62%)`;
+    ctx.lineWidth   = this.lw;
+    ctx.beginPath();
+    for (let i = 0; i <= 360; i++) {
+      const t_ = (i / 360) * Math.PI * 2;
+      const px = Math.sin(this.a * t_ + this.delta) * this.rx;
+      const py = Math.sin(this.b * t_) * this.ry;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── PolygonMorph ──────────────────────────────────────────────────────────────
+// A polygon whose vertices continuously lerp toward random new target positions.
+class PolygonMorph {
+  constructor() { this.reset(); }
+  _newTargets() {
+    const n = this.verts.length;
+    this.verts.forEach((v, i) => {
+      const a = (i / n) * Math.PI * 2 + rand(-0.8, 0.8);
+      const r = rand(10, 130);
+      v.tx = Math.cos(a) * r;
+      v.ty = Math.sin(a) * r;
+    });
+    this.nextMorph = rand(50, 180);
+  }
+  reset() {
+    const n    = 4 + randI(9);
+    this.verts = Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2;
+      const r = rand(15, 100);
+      return { cx: Math.cos(a) * r, cy: Math.sin(a) * r, tx: 0, ty: 0 };
+    });
+    this._newTargets();
+    this.x      = rand(0, W);
+    this.y      = rand(0, H);
+    this.rot    = rand(0, Math.PI * 2);
+    this.drot   = rand(-0.012, 0.012);
+    this.hue    = hshift(rand(0, 360));
+    this.alpha  = rand(0.04, 0.25);
+    this.lw     = rand(0.4, 2);
+    this.filled = Math.random() > 0.65;
+    this.vx     = rand(-0.45, 0.45);
+    this.vy     = rand(-0.45, 0.45);
+    this.life   = 0;
+    this.max    = rand(500, 1300);
+  }
+  tick() {
+    this.verts.forEach(v => {
+      v.cx += (v.tx - v.cx) * 0.025;
+      v.cy += (v.ty - v.cy) * 0.025;
+    });
+    this.rot = (this.rot + this.drot) % (Math.PI * 2);
+    this.hue = (this.hue + 0.12) % 360;
+    this.x   = (this.x + this.vx + W) % W;
+    this.y   = (this.y + this.vy + H) % H;
+    if (--this.nextMorph <= 0) this._newTargets();
+    if (++this.life > this.max) this.reset();
+  }
+  draw(ctx) {
+    const fade = Math.sin(Math.PI * this.life / this.max);
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.globalAlpha = this.alpha * fade;
+    ctx.strokeStyle = `hsl(${this.hue},70%,58%)`;
+    ctx.fillStyle   = `hsl(${(this.hue + 45) % 360},60%,28%)`;
+    ctx.lineWidth   = this.lw;
+    ctx.beginPath();
+    this.verts.forEach((v, i) => i ? ctx.lineTo(v.cx, v.cy) : ctx.moveTo(v.cx, v.cy));
+    ctx.closePath();
+    if (this.filled) ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── MeshWeb ───────────────────────────────────────────────────────────────────
+// Moving nodes connected by edges when within threshold — elastic web.
+class MeshWeb {
+  constructor() { this.reset(); }
+  reset() {
+    const n    = 5 + randI(10);
+    this.nodes = Array.from({ length: n }, () => ({
+      x: rand(0, W), y: rand(0, H),
+      vx: rand(-1.2, 1.2) * BASE_SPEED,
+      vy: rand(-1.2, 1.2) * BASE_SPEED,
+    }));
+    this.thresh = rand(90, 280);
+    this.hue    = hshift(rand(0, 360));
+    this.alpha  = rand(0.04, 0.22);
+    this.lw     = rand(0.2, 1.2);
+    this.life   = 0;
+    this.max    = rand(400, 1100);
+  }
+  tick() {
+    this.nodes.forEach(n => {
+      n.x += n.vx; n.y += n.vy;
+      if (n.x < 0 || n.x > W) n.vx *= -1;
+      if (n.y < 0 || n.y > H) n.vy *= -1;
+    });
+    this.hue = (this.hue + 0.18) % 360;
+    if (++this.life > this.max) this.reset();
+  }
+  draw(ctx) {
+    const fade = Math.sin(Math.PI * this.life / this.max);
+    ctx.save();
+    ctx.lineWidth = this.lw;
+    for (let i = 0; i < this.nodes.length; i++) {
+      for (let j = i + 1; j < this.nodes.length; j++) {
+        const dx = this.nodes[i].x - this.nodes[j].x;
+        const dy = this.nodes[i].y - this.nodes[j].y;
+        const d  = Math.sqrt(dx * dx + dy * dy);
+        if (d > this.thresh) continue;
+        ctx.globalAlpha = this.alpha * fade * (1 - d / this.thresh);
+        ctx.strokeStyle = `hsl(${(this.hue + d * 0.4) % 360},65%,60%)`;
+        ctx.beginPath();
+        ctx.moveTo(this.nodes[i].x, this.nodes[i].y);
+        ctx.lineTo(this.nodes[j].x, this.nodes[j].y);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+}
+
 // ── build scene ───────────────────────────────────────────────────────────────
 const particles  = Array.from({ length: 280 }, () => new Particle());
 const shapes     = Array.from({ length: 45  }, () => new Shape(true));
@@ -680,6 +841,9 @@ const waveSweeps = Array.from({ length: 10  }, () => new WaveSweep());
 const spirals    = Array.from({ length: 18  }, () => new Spiral(true));
 const tendrils   = Array.from({ length: 22  }, () => new Tendril());
 const arcBursts  = Array.from({ length: 16  }, () => new ArcBurst());
+const lissajous  = Array.from({ length: 14  }, () => new LissajousGhost());
+const polyMorphs = Array.from({ length: 14  }, () => new PolygonMorph());
+const meshWebs   = Array.from({ length: 10  }, () => new MeshWeb());
 
 // ── main loop ─────────────────────────────────────────────────────────────────
 let t = 0;
@@ -694,17 +858,21 @@ function animate() {
   bgCtx.fillRect(0, 0, W, H);
   bgCtx.globalAlpha = 1;
 
-  noiseLines.forEach(l => { l.tick(); l.draw(bgCtx); });
-  shapes.forEach(s     => { s.tick(); s.draw(bgCtx); });
-  mandalas.forEach(m   => { m.tick(); m.draw(bgCtx); });
-  waveSweeps.forEach(w => { w.tick(); w.draw(bgCtx); });
+  noiseLines.forEach(l   => { l.tick();  l.draw(bgCtx); });
+  shapes.forEach(s       => { s.tick();  s.draw(bgCtx); });
+  mandalas.forEach(m     => { m.tick();  m.draw(bgCtx); });
+  waveSweeps.forEach(w   => { w.tick();  w.draw(bgCtx); });
+  lissajous.forEach(l    => { l.tick();  l.draw(bgCtx); });
+  polyMorphs.forEach(p   => { p.tick();  p.draw(bgCtx); });
 
-  // scanline glitch
-  if (t % 43 === 0) {
-    const y = rand(0, H);
-    bgCtx.globalAlpha = rand(0.06, 0.18);
-    bgCtx.fillStyle = `hsl(${hshift(rand(0,360))},80%,60%)`;
-    bgCtx.fillRect(0, y, W, rand(1, 5));
+  // multi-strip scanline glitch (more frequent, 1-3 lines at once)
+  if (t % 23 === 0) {
+    const n = 1 + randI(3);
+    for (let i = 0; i < n; i++) {
+      bgCtx.globalAlpha = rand(0.04, 0.22);
+      bgCtx.fillStyle = `hsl(${hshift(rand(0, 360))},80%,60%)`;
+      bgCtx.fillRect(0, rand(0, H), W, rand(1, 7));
+    }
     bgCtx.globalAlpha = 1;
   }
 
@@ -722,6 +890,19 @@ function animate() {
   tendrils.forEach(td => { td.tick();   td.draw(midCtx); });
   eyes.forEach(e      => { e.tick(t);   e.draw(midCtx, t); });
   ripples.forEach(r   => { r.tick();    r.draw(midCtx); });
+  meshWebs.forEach(m  => { m.tick();    m.draw(midCtx); });
+
+  // chromatic aberration: offset copy a random strip left/right with screen blend
+  if (t % 37 === 0 && Math.random() < 0.42) {
+    const sy = rand(0, H - 80);
+    const sh = rand(15, 75);
+    midCtx.save();
+    midCtx.globalAlpha = 0.18;
+    midCtx.globalCompositeOperation = 'screen';
+    midCtx.drawImage(mid.el, 0, sy, W, sh, -5, sy, W, sh);
+    midCtx.drawImage(mid.el, 0, sy, W, sh,  5, sy, W, sh);
+    midCtx.restore();
+  }
 
   // ── foreground layer ─────────────────────────────────────────────────────────
   const fgCtx = fg.ctx;
@@ -732,22 +913,48 @@ function animate() {
 
   particles.forEach(p => { p.tick(); p.draw(fgCtx); });
 
-  // glitch block
-  if (t % 29 === 0 && Math.random() < 0.35) {
-    fgCtx.globalAlpha = rand(0.08, 0.35);
-    fgCtx.fillStyle = `hsl(${hshift(rand(0,360))},100%,60%)`;
-    fgCtx.fillRect(rand(0,W), rand(0,H), rand(20,220), rand(4,55));
+  // glitch block (more frequent, higher probability, occasional weird blend)
+  if (t % 22 === 0 && Math.random() < 0.52) {
+    fgCtx.save();
+    fgCtx.globalAlpha = rand(0.08, 0.4);
+    if (Math.random() < 0.3) fgCtx.globalCompositeOperation = 'screen';
+    fgCtx.fillStyle = `hsl(${hshift(rand(0, 360))},100%,60%)`;
+    fgCtx.fillRect(rand(0, W), rand(0, H), rand(15, 250), rand(3, 65));
+    fgCtx.restore();
+  }
+
+  // void flash: full-canvas colour wash
+  if (t % 83 === 0 && Math.random() < 0.32) {
+    fgCtx.save();
+    fgCtx.globalAlpha = rand(0.04, 0.18);
+    fgCtx.globalCompositeOperation = 'screen';
+    fgCtx.fillStyle = `hsl(${hshift(rand(0, 360))},100%,50%)`;
+    fgCtx.fillRect(0, 0, W, H);
+    fgCtx.restore();
+  }
+
+  // horizontal tear (more frequent)
+  if (t % 47 === 0 && Math.random() < 0.38) {
+    const y    = rand(0, H);
+    const srcX = rand(0, W * 0.5);
+    fgCtx.globalAlpha = rand(0.1, 0.45);
+    fgCtx.drawImage(fg.el, srcX, y, rand(50, 320), rand(2, 22),
+                           srcX + rand(-55, 55), y, rand(50, 320), rand(2, 22));
     fgCtx.globalAlpha = 1;
   }
 
-  // occasional horizontal tear
-  if (t % 71 === 0 && Math.random() < 0.25) {
-    const y = rand(0, H);
-    const srcX = rand(0, W * 0.5);
-    fgCtx.globalAlpha = rand(0.1, 0.4);
-    fgCtx.drawImage(fg.el, srcX, y, rand(50, 300), rand(2, 20),
-                           srcX + rand(-40, 40), y, rand(50, 300), rand(2, 20));
-    fgCtx.globalAlpha = 1;
+  // diagonal streak
+  if (t % 59 === 0 && Math.random() < 0.28) {
+    fgCtx.save();
+    fgCtx.globalAlpha = rand(0.06, 0.22);
+    fgCtx.strokeStyle = `hsl(${hshift(rand(0, 360))},90%,65%)`;
+    fgCtx.lineWidth   = rand(1, 4);
+    fgCtx.beginPath();
+    const sx = rand(0, W); const sy = rand(0, H);
+    fgCtx.moveTo(sx, sy);
+    fgCtx.lineTo(sx + rand(-300, 300), sy + rand(-300, 300));
+    fgCtx.stroke();
+    fgCtx.restore();
   }
 
   requestAnimationFrame(animate);
