@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>謎 | the void stares back</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #000;
+  cursor: none;
+  user-select: none;
+}
+canvas {
+  position: fixed;
+  top: 0; left: 0;
+  pointer-events: none;
+}
+#bg  { z-index: 1; }
+#mid { z-index: 2; }
+#fg  { z-index: 3; mix-blend-mode: screen; }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<canvas id="mid"></canvas>
+<canvas id="fg"></canvas>
+<script>
+const W = window.innerWidth;
+const H = window.innerHeight;
+
+function mkCanvas(id) {
+  const el = document.getElementById(id);
+  el.width = W; el.height = H;
+  return { el, ctx: el.getContext('2d') };
+}
+const bg  = mkCanvas('bg');
+const mid = mkCanvas('mid');
+const fg  = mkCanvas('fg');
+
+// ── symbols ──────────────────────────────────────────────────────────────────
+const GLYPHS = [
+  '謎','虚','無','問','闇','深','淵','幻','影','空','混','沌','鏡','穴','夢',
+  '？','∞','∅','∴','∵','∇','∆','∫','∂','∏','∑','⊗','⊕','⊙','⊛',
+  '█','▓','▒','░','▄','▀','▌','▐','■','□','◈','◉','◌','◍',
+  '⌬','⌭','⎔','⏣','Ψ','Ω','Φ','Θ','Λ','Ξ','Π','Σ',
+  'void','null','NaN','Inf','0x','//','...','ERROR','LOST','???','!!!',
+  'うつろ','なぞ','なに','どこ','だれ','なぜ','いつ','どう',
+  'ア','イ','ウ','エ','オ','カ','キ','ク','ケ','コ',
+  '一','二','三','四','五','六','七','八','九','十',
+  '0','1','01','10','101','011','110','0xDEAD','0x0000',
+  '⚠','⚡','♾','⟲','⟳','⇌','⇋','⚿','◯','△','□',
+  '∞∞','??','!!','>>','<<','||','&&','~~','##','@@',
+];
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+const rand  = (a, b) => a + Math.random() * (b - a);
+const randI = (n)    => Math.floor(Math.random() * n);
+const pick  = (arr)  => arr[randI(arr.length)];
+
+// ── Particle ──────────────────────────────────────────────────────────────────
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x  = rand(0, W);
+    this.y  = rand(0, H);
+    this.vx = rand(-2.5, 2.5);
+    this.vy = rand(-2.5, 2.5);
+    this.r  = rand(0.5, 4.5);
+    this.hue   = rand(0, 360);
+    this.alpha = rand(0.3, 1);
+    this.life  = 0;
+    this.max   = rand(120, 500);
+  }
+  tick() {
+    this.x += this.vx;  this.y += this.vy;
+    this.hue = (this.hue + 0.6) % 360;
+    if (++this.life > this.max ||
+        this.x < 0 || this.x > W || this.y < 0 || this.y > H) this.reset();
+  }
+  draw(ctx) {
+    ctx.globalAlpha = this.alpha * (1 - this.life / this.max);
+    ctx.fillStyle = `hsl(${this.hue},80%,60%)`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// ── FloatingText ──────────────────────────────────────────────────────────────
+class FloatingText {
+  constructor(init) {
+    this.life = 0;
+    this.reset(init);
+  }
+  reset(anywhere) {
+    this.x    = anywhere ? rand(0, W) : (Math.random() > .5 ? -60 : W + 60);
+    this.y    = rand(0, H);
+    this.text = pick(GLYPHS);
+    this.size = rand(8, 56);
+    this.vx   = rand(-1.8, 1.8);
+    this.vy   = rand(-1.8, 1.8);
+    this.hue  = rand(0, 360);
+    this.rot  = rand(0, Math.PI * 2);
+    this.drot = rand(-0.05, 0.05);
+    this.alpha = rand(0.15, 0.9);
+    this.life  = 0;
+    this.max   = rand(250, 700);
+  }
+  tick() {
+    this.x += this.vx; this.y += this.vy;
+    this.rot  = (this.rot  + this.drot) % (Math.PI * 2);
+    this.hue  = (this.hue  + 0.25) % 360;
+    if (++this.life > this.max) this.reset();
+  }
+  draw(ctx) {
+    const fade = Math.sin(Math.PI * this.life / this.max);
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.globalAlpha = this.alpha * fade;
+    ctx.font = `${this.size}px 'Courier New', monospace`;
+    ctx.fillStyle = `hsl(${this.hue},70%,65%)`;
+    ctx.fillText(this.text, 0, 0);
+    ctx.restore();
+  }
+}
+
+// ── Shape ─────────────────────────────────────────────────────────────────────
+class Shape {
+  constructor(init) { this.life = 0; this.reset(init); }
+  reset(anywhere) {
+    this.x    = anywhere ? rand(0, W) : rand(-150, -10);
+    this.y    = rand(0, H);
+    this.kind = randI(5);
+    this.size = rand(5, 130);
+    this.vx   = rand(-1.5, 1.5);
+    this.vy   = rand(-1.5, 1.5);
+    this.rot  = rand(0, Math.PI * 2);
+    this.drot = rand(-0.03, 0.03);
+    this.hue  = rand(0, 360);
+    this.alpha = rand(0.04, 0.45);
+    this.filled = Math.random() > 0.5;
+    this.lw   = rand(0.5, 3);
+    this.life  = 0;
+    this.max   = rand(400, 1000);
+  }
+  tick() {
+    this.x += this.vx; this.y += this.vy;
+    this.rot  = (this.rot  + this.drot) % (Math.PI * 2);
+    this.hue  = (this.hue  + 0.15) % 360;
+    if (++this.life > this.max) this.reset();
+  }
+  draw(ctx) {
+    const fade = Math.sin(Math.PI * this.life / this.max);
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.globalAlpha = this.alpha * fade;
+    ctx.strokeStyle = `hsl(${this.hue},60%,55%)`;
+    ctx.fillStyle   = `hsl(${(this.hue + 30) % 360},60%,40%)`;
+    ctx.lineWidth   = this.lw;
+    ctx.beginPath();
+    const s = this.size;
+    if      (this.kind === 0) { ctx.arc(0, 0, s, 0, Math.PI * 2); }
+    else if (this.kind === 1) { ctx.rect(-s/2, -s/2, s, s); }
+    else if (this.kind === 2) {
+      ctx.moveTo(0, -s); ctx.lineTo(s*.866, s*.5); ctx.lineTo(-s*.866, s*.5); ctx.closePath();
+    }
+    else if (this.kind === 3) {
+      for (let i = 0; i < 5; i++) {
+        const a = (i/5)*Math.PI*2 - Math.PI/2;
+        ctx[i ? 'lineTo':'moveTo'](Math.cos(a)*s, Math.sin(a)*s);
+      } ctx.closePath();
+    }
+    else {
+      for (let i = 0; i < 10; i++) {
+        const a = (i/10)*Math.PI*2 - Math.PI/2;
+        const r = i%2 === 0 ? s : s*.38;
+        ctx[i ? 'lineTo':'moveTo'](Math.cos(a)*r, Math.sin(a)*r);
+      } ctx.closePath();
+    }
+    if (this.filled) ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── Eye ───────────────────────────────────────────────────────────────────────
+class Eye {
+  constructor() {
+    this.x     = rand(0, W);
+    this.y     = rand(0, H);
+    this.size  = rand(18, 90);
+    this.hue   = rand(0, 360);
+    this.phase = rand(0, Math.PI * 2);
+    this.speed = rand(0.012, 0.04);
+    this.alpha = rand(0.08, 0.45);
+    this.vx    = rand(-0.6, 0.6);
+    this.vy    = rand(-0.6, 0.6);
+  }
+  tick(t) {
+    this.x = (this.x + this.vx + W) % W;
+    this.y = (this.y + this.vy + H) % H;
+    this.phase += this.speed;
+    this.hue = (this.hue + 0.12) % 360;
+  }
+  draw(ctx, t) {
+    const open = (Math.sin(this.phase) + 1) / 2;
+    if (open < 0.02) return;
+    const s = this.size;
+    const px = Math.sin(t * 0.0013 + this.x * 0.01) * s * 0.28;
+    const py = Math.cos(t * 0.0017 + this.y * 0.01) * s * 0.12;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.globalAlpha = this.alpha * open;
+
+    // sclera
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s, s * 0.45 * open, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `hsl(${this.hue},15%,85%)`;
+    ctx.fill();
+
+    // iris
+    ctx.beginPath();
+    ctx.ellipse(px*.5, py*.5, s*.3, s*.3*open, 0, 0, Math.PI*2);
+    ctx.fillStyle = `hsl(${this.hue},70%,38%)`;
+    ctx.fill();
+
+    // pupil
+    ctx.beginPath();
+    ctx.ellipse(px*.5, py*.5, s*.12, s*.12*open, 0, 0, Math.PI*2);
+    ctx.fillStyle = '#000';
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+// ── NoiseLine ─────────────────────────────────────────────────────────────────
+class NoiseLine {
+  constructor() { this.reset(); }
+  reset() {
+    const n = 4 + randI(14);
+    this.pts = Array.from({ length: n }, () => ({
+      x: rand(0, W), y: rand(0, H),
+      vx: rand(-2, 2), vy: rand(-2, 2),
+    }));
+    this.hue   = rand(0, 360);
+    this.alpha = rand(0.04, 0.3);
+    this.lw    = rand(0.2, 2.5);
+    this.life  = 0;
+    this.max   = rand(150, 600);
+  }
+  tick() {
+    this.pts.forEach(p => {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0 || p.x > W) p.vx *= -1;
+      if (p.y < 0 || p.y > H) p.vy *= -1;
+    });
+    this.hue = (this.hue + 0.35) % 360;
+    if (++this.life > this.max) this.reset();
+  }
+  draw(ctx) {
+    const fade = Math.sin(Math.PI * this.life / this.max);
+    ctx.save();
+    ctx.globalAlpha = this.alpha * fade;
+    ctx.strokeStyle = `hsl(${this.hue},60%,55%)`;
+    ctx.lineWidth = this.lw;
+    ctx.beginPath();
+    this.pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── DataStream ────────────────────────────────────────────────────────────────
+class DataStream {
+  constructor() { this.reset(); }
+  reset() {
+    this.x     = rand(0, W);
+    this.y     = -20;
+    this.chars = Array.from({ length: 6 + randI(20) }, () => pick(GLYPHS));
+    this.size  = rand(9, 22);
+    this.vy    = rand(1, 4);
+    this.hue   = rand(80, 160);  // greenish matrix vibe
+    this.alpha = rand(0.2, 0.7);
+  }
+  tick() {
+    this.y += this.vy;
+    if (this.y > H + 200) this.reset();
+    // shuffle one char occasionally
+    if (Math.random() < 0.03) {
+      const i = randI(this.chars.length);
+      this.chars[i] = pick(GLYPHS);
+    }
+  }
+  draw(ctx) {
+    ctx.font = `${this.size}px 'Courier New', monospace`;
+    this.chars.forEach((ch, i) => {
+      const brightness = 30 + (this.chars.length - i) / this.chars.length * 50;
+      ctx.globalAlpha = this.alpha * (i === 0 ? 1 : (this.chars.length - i) / this.chars.length);
+      ctx.fillStyle = `hsl(${this.hue},90%,${brightness}%)`;
+      ctx.fillText(ch, this.x, this.y - i * this.size * 1.2);
+    });
+  }
+}
+
+// ── build scene ───────────────────────────────────────────────────────────────
+const particles   = Array.from({ length: 350 }, () => new Particle());
+const texts       = Array.from({ length: 90  }, () => new FloatingText(true));
+const shapes      = Array.from({ length: 50  }, () => new Shape(true));
+const eyes        = Array.from({ length: 18  }, () => new Eye());
+const noiseLines  = Array.from({ length: 30  }, () => new NoiseLine());
+const dataStreams  = Array.from({ length: 28  }, () => new DataStream());
+
+// ── main loop ─────────────────────────────────────────────────────────────────
+let t = 0;
+
+function animate() {
+  t++;
+
+  // ── background layer ────────────────────────────────────────────────────────
+  const bgCtx = bg.ctx;
+  bgCtx.globalAlpha = 0.035;
+  bgCtx.fillStyle = '#000';
+  bgCtx.fillRect(0, 0, W, H);
+  bgCtx.globalAlpha = 1;
+
+  noiseLines.forEach(l => { l.tick(); l.draw(bgCtx); });
+  shapes.forEach(s    => { s.tick(); s.draw(bgCtx); });
+
+  // scanline glitch
+  if (t % 43 === 0) {
+    const y = rand(0, H);
+    bgCtx.globalAlpha = rand(0.06, 0.18);
+    bgCtx.fillStyle = `hsl(${rand(0,360)},80%,60%)`;
+    bgCtx.fillRect(0, y, W, rand(1, 5));
+    bgCtx.globalAlpha = 1;
+  }
+
+  // ── mid layer ───────────────────────────────────────────────────────────────
+  const midCtx = mid.ctx;
+  midCtx.globalAlpha = 0.045;
+  midCtx.fillStyle = '#000';
+  midCtx.fillRect(0, 0, W, H);
+  midCtx.globalAlpha = 1;
+
+  dataStreams.forEach(d => { d.tick(); d.draw(midCtx); });
+  eyes.forEach(e        => { e.tick(t); e.draw(midCtx, t); });
+  texts.forEach(tx      => { tx.tick(); tx.draw(midCtx); });
+
+  // ── foreground layer ─────────────────────────────────────────────────────────
+  const fgCtx = fg.ctx;
+  fgCtx.globalAlpha = 0.07;
+  fgCtx.fillStyle = '#000';
+  fgCtx.fillRect(0, 0, W, H);
+  fgCtx.globalAlpha = 1;
+
+  particles.forEach(p => { p.tick(); p.draw(fgCtx); });
+
+  // glitch block
+  if (t % 29 === 0 && Math.random() < 0.35) {
+    fgCtx.globalAlpha = rand(0.08, 0.35);
+    fgCtx.fillStyle = `hsl(${rand(0,360)},100%,60%)`;
+    fgCtx.fillRect(rand(0,W), rand(0,H), rand(20,220), rand(4,55));
+    fgCtx.globalAlpha = 1;
+  }
+
+  // occasional horizontal tear
+  if (t % 71 === 0 && Math.random() < 0.25) {
+    const y = rand(0, H);
+    const srcX = rand(0, W * 0.5);
+    fgCtx.globalAlpha = rand(0.1, 0.4);
+    fgCtx.drawImage(fg.el, srcX, y, rand(50, 300), rand(2, 20),
+                           srcX + rand(-40, 40), y, rand(50, 300), rand(2, 20));
+    fgCtx.globalAlpha = 1;
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// ── disable pointer/selection interaction (keep browser shortcuts intact) ────
+['contextmenu','selectstart','dragstart','mousedown','touchstart'].forEach(ev => {
+  document.addEventListener(ev, e => e.preventDefault(), { passive: false });
+});
+
+// ── resize: rescale canvases to new viewport ──────────────────────────────────
+window.addEventListener('resize', () => {
+  const nW = window.innerWidth, nH = window.innerHeight;
+  [bg, mid, fg].forEach(({ el }) => { el.width = nW; el.height = nH; });
+});
+
+animate();
+</script>
+</body>
+</html>
