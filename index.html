@@ -28,8 +28,8 @@ canvas {
 <canvas id="mid"></canvas>
 <canvas id="fg"></canvas>
 <script>
-const W = window.innerWidth;
-const H = window.innerHeight;
+let W = window.innerWidth;
+let H = window.innerHeight;
 
 function mkCanvas(id) {
   const el = document.getElementById(id);
@@ -40,25 +40,19 @@ const bg  = mkCanvas('bg');
 const mid = mkCanvas('mid');
 const fg  = mkCanvas('fg');
 
-// ── symbols ──────────────────────────────────────────────────────────────────
-const GLYPHS = [
-  '謎','虚','無','問','闇','深','淵','幻','影','空','混','沌','鏡','穴','夢',
-  '？','∞','∅','∴','∵','∇','∆','∫','∂','∏','∑','⊗','⊕','⊙','⊛',
-  '█','▓','▒','░','▄','▀','▌','▐','■','□','◈','◉','◌','◍',
-  '⌬','⌭','⎔','⏣','Ψ','Ω','Φ','Θ','Λ','Ξ','Π','Σ',
-  'void','null','NaN','Inf','0x','//','...','ERROR','LOST','???','!!!',
-  'うつろ','なぞ','なに','どこ','だれ','なぜ','いつ','どう',
-  'ア','イ','ウ','エ','オ','カ','キ','ク','ケ','コ',
-  '一','二','三','四','五','六','七','八','九','十',
-  '0','1','01','10','101','011','110','0xDEAD','0x0000',
-  '⚠','⚡','♾','⟲','⟳','⇌','⇋','⚿','◯','△','□',
-  '∞∞','??','!!','>>','<<','||','&&','~~','##','@@',
-];
+// ── time-based variation ──────────────────────────────────────────────────────
+// Hue drifts across the year (golden angle) and shifts with the hour.
+// Speed is slightly higher at midday, quieter at night.
+const _now  = new Date();
+const _day  = Math.floor((_now - new Date(_now.getFullYear(), 0, 1)) / 86400000);
+const _hour = _now.getHours() + _now.getMinutes() / 60;
+const BASE_HUE   = (_day * 137.508 + _hour * 6) % 360;
+const BASE_SPEED = 0.55 + 0.9 * Math.sin(Math.PI * _hour / 24);
 
 // ── helpers ───────────────────────────────────────────────────────────────────
-const rand  = (a, b) => a + Math.random() * (b - a);
-const randI = (n)    => Math.floor(Math.random() * n);
-const pick  = (arr)  => arr[randI(arr.length)];
+const rand   = (a, b) => a + Math.random() * (b - a);
+const randI  = (n)    => Math.floor(Math.random() * n);
+const hshift = (h)    => (h + BASE_HUE) % 360;
 
 // ── Particle ──────────────────────────────────────────────────────────────────
 class Particle {
@@ -66,16 +60,16 @@ class Particle {
   reset() {
     this.x  = rand(0, W);
     this.y  = rand(0, H);
-    this.vx = rand(-2.5, 2.5);
-    this.vy = rand(-2.5, 2.5);
+    this.vx = rand(-2.5, 2.5) * BASE_SPEED;
+    this.vy = rand(-2.5, 2.5) * BASE_SPEED;
     this.r  = rand(0.5, 4.5);
-    this.hue   = rand(0, 360);
+    this.hue   = hshift(rand(0, 360));
     this.alpha = rand(0.3, 1);
     this.life  = 0;
     this.max   = rand(120, 500);
   }
   tick() {
-    this.x += this.vx;  this.y += this.vy;
+    this.x += this.vx; this.y += this.vy;
     this.hue = (this.hue + 0.6) % 360;
     if (++this.life > this.max ||
         this.x < 0 || this.x > W || this.y < 0 || this.y > H) this.reset();
@@ -89,58 +83,19 @@ class Particle {
   }
 }
 
-// ── FloatingText ──────────────────────────────────────────────────────────────
-class FloatingText {
-  constructor(init) {
-    this.life = 0;
-    this.reset(init);
-  }
-  reset(anywhere) {
-    this.x    = anywhere ? rand(0, W) : (Math.random() > .5 ? -60 : W + 60);
-    this.y    = rand(0, H);
-    this.text = pick(GLYPHS);
-    this.size = rand(8, 56);
-    this.vx   = rand(-1.8, 1.8);
-    this.vy   = rand(-1.8, 1.8);
-    this.hue  = rand(0, 360);
-    this.rot  = rand(0, Math.PI * 2);
-    this.drot = rand(-0.05, 0.05);
-    this.alpha = rand(0.15, 0.9);
-    this.life  = 0;
-    this.max   = rand(250, 700);
-  }
-  tick() {
-    this.x += this.vx; this.y += this.vy;
-    this.rot  = (this.rot  + this.drot) % (Math.PI * 2);
-    this.hue  = (this.hue  + 0.25) % 360;
-    if (++this.life > this.max) this.reset();
-  }
-  draw(ctx) {
-    const fade = Math.sin(Math.PI * this.life / this.max);
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.rotate(this.rot);
-    ctx.globalAlpha = this.alpha * fade;
-    ctx.font = `${this.size}px 'Courier New', monospace`;
-    ctx.fillStyle = `hsl(${this.hue},70%,65%)`;
-    ctx.fillText(this.text, 0, 0);
-    ctx.restore();
-  }
-}
-
 // ── Shape ─────────────────────────────────────────────────────────────────────
 class Shape {
   constructor(init) { this.life = 0; this.reset(init); }
   reset(anywhere) {
     this.x    = anywhere ? rand(0, W) : rand(-150, -10);
     this.y    = rand(0, H);
-    this.kind = randI(5);
+    this.kind = randI(6);
     this.size = rand(5, 130);
-    this.vx   = rand(-1.5, 1.5);
-    this.vy   = rand(-1.5, 1.5);
+    this.vx   = rand(-1.5, 1.5) * BASE_SPEED;
+    this.vy   = rand(-1.5, 1.5) * BASE_SPEED;
     this.rot  = rand(0, Math.PI * 2);
     this.drot = rand(-0.03, 0.03);
-    this.hue  = rand(0, 360);
+    this.hue  = hshift(rand(0, 360));
     this.alpha = rand(0.04, 0.45);
     this.filled = Math.random() > 0.5;
     this.lw   = rand(0.5, 3);
@@ -149,8 +104,8 @@ class Shape {
   }
   tick() {
     this.x += this.vx; this.y += this.vy;
-    this.rot  = (this.rot  + this.drot) % (Math.PI * 2);
-    this.hue  = (this.hue  + 0.15) % 360;
+    this.rot = (this.rot + this.drot) % (Math.PI * 2);
+    this.hue = (this.hue + 0.15) % 360;
     if (++this.life > this.max) this.reset();
   }
   draw(ctx) {
@@ -164,22 +119,27 @@ class Shape {
     ctx.lineWidth   = this.lw;
     ctx.beginPath();
     const s = this.size;
-    if      (this.kind === 0) { ctx.arc(0, 0, s, 0, Math.PI * 2); }
-    else if (this.kind === 1) { ctx.rect(-s/2, -s/2, s, s); }
-    else if (this.kind === 2) {
+    if (this.kind === 0) {
+      ctx.arc(0, 0, s, 0, Math.PI * 2);
+    } else if (this.kind === 1) {
+      ctx.rect(-s/2, -s/2, s, s);
+    } else if (this.kind === 2) {
       ctx.moveTo(0, -s); ctx.lineTo(s*.866, s*.5); ctx.lineTo(-s*.866, s*.5); ctx.closePath();
-    }
-    else if (this.kind === 3) {
+    } else if (this.kind === 3) {
       for (let i = 0; i < 5; i++) {
         const a = (i/5)*Math.PI*2 - Math.PI/2;
-        ctx[i ? 'lineTo':'moveTo'](Math.cos(a)*s, Math.sin(a)*s);
+        ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a)*s, Math.sin(a)*s);
       } ctx.closePath();
-    }
-    else {
+    } else if (this.kind === 4) {
       for (let i = 0; i < 10; i++) {
         const a = (i/10)*Math.PI*2 - Math.PI/2;
         const r = i%2 === 0 ? s : s*.38;
-        ctx[i ? 'lineTo':'moveTo'](Math.cos(a)*r, Math.sin(a)*r);
+        ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a)*r, Math.sin(a)*r);
+      } ctx.closePath();
+    } else {
+      for (let i = 0; i < 6; i++) {
+        const a = (i/6)*Math.PI*2;
+        ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a)*s, Math.sin(a)*s);
       } ctx.closePath();
     }
     if (this.filled) ctx.fill();
@@ -188,52 +148,102 @@ class Shape {
   }
 }
 
-// ── Eye ───────────────────────────────────────────────────────────────────────
+// ── Eye (mysterious, not scary) ────────────────────────────────────────────────
+// Round, galaxy-like iris; sparkle highlights; soft glow; no slit pupil.
 class Eye {
   constructor() {
     this.x     = rand(0, W);
     this.y     = rand(0, H);
-    this.size  = rand(18, 90);
-    this.hue   = rand(0, 360);
+    this.size  = rand(18, 80);
+    this.hue   = hshift(rand(160, 300));
     this.phase = rand(0, Math.PI * 2);
-    this.speed = rand(0.012, 0.04);
-    this.alpha = rand(0.08, 0.45);
-    this.vx    = rand(-0.6, 0.6);
-    this.vy    = rand(-0.6, 0.6);
+    this.speed = rand(0.008, 0.025);
+    this.alpha = rand(0.1, 0.42);
+    this.vx    = rand(-0.4, 0.4);
+    this.vy    = rand(-0.4, 0.4);
+    this.sparkAngle = rand(0, Math.PI * 2);
   }
   tick(t) {
     this.x = (this.x + this.vx + W) % W;
     this.y = (this.y + this.vy + H) % H;
     this.phase += this.speed;
-    this.hue = (this.hue + 0.12) % 360;
+    this.hue = (this.hue + 0.08) % 360;
+    this.sparkAngle += 0.025;
   }
   draw(ctx, t) {
     const open = (Math.sin(this.phase) + 1) / 2;
-    if (open < 0.02) return;
-    const s = this.size;
-    const px = Math.sin(t * 0.0013 + this.x * 0.01) * s * 0.28;
-    const py = Math.cos(t * 0.0017 + this.y * 0.01) * s * 0.12;
+    if (open < 0.03) return;
+    const s  = this.size;
+    // pupil drifts in a gentle lemniscate (figure-8), never menacing
+    const px = Math.sin(t * 0.0011) * s * 0.22;
+    const py = Math.sin(t * 0.0022) * s * 0.10;
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.globalAlpha = this.alpha * open;
 
-    // sclera
+    // soft diffuse glow
+    const glow = ctx.createRadialGradient(0, 0, s * 0.3, 0, 0, s * 1.2);
+    glow.addColorStop(0, `hsla(${this.hue},80%,70%,0.18)`);
+    glow.addColorStop(1, `hsla(${this.hue},80%,50%,0)`);
     ctx.beginPath();
-    ctx.ellipse(0, 0, s, s * 0.45 * open, 0, 0, Math.PI * 2);
-    ctx.fillStyle = `hsl(${this.hue},15%,85%)`;
+    ctx.arc(0, 0, s * 1.2, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
     ctx.fill();
 
-    // iris
+    // sclera — soft pearl-white ellipse
     ctx.beginPath();
-    ctx.ellipse(px*.5, py*.5, s*.3, s*.3*open, 0, 0, Math.PI*2);
-    ctx.fillStyle = `hsl(${this.hue},70%,38%)`;
+    ctx.ellipse(0, 0, s, s * 0.5 * open, 0, 0, Math.PI * 2);
+    const sg = ctx.createRadialGradient(0, -s * 0.1, 0, 0, 0, s);
+    sg.addColorStop(0, `hsl(${(this.hue+40)%360},30%,96%)`);
+    sg.addColorStop(1, `hsl(${this.hue},20%,82%)`);
+    ctx.fillStyle = sg;
     ctx.fill();
 
-    // pupil
+    // iris — galaxy radial gradient
+    const ir = s * 0.34;
     ctx.beginPath();
-    ctx.ellipse(px*.5, py*.5, s*.12, s*.12*open, 0, 0, Math.PI*2);
-    ctx.fillStyle = '#000';
+    ctx.ellipse(px * 0.4, py * 0.4, ir, ir * open, 0, 0, Math.PI * 2);
+    const ig = ctx.createRadialGradient(px*.4, py*.4, 0, px*.4, py*.4, ir);
+    ig.addColorStop(0,   `hsl(${(this.hue+60)%360},90%,78%)`);
+    ig.addColorStop(0.5, `hsl(${this.hue},80%,45%)`);
+    ig.addColorStop(1,   `hsl(${(this.hue+180)%360},60%,22%)`);
+    ctx.fillStyle = ig;
     ctx.fill();
+
+    // pupil — round, deep, hint of inner colour
+    const pr = s * 0.14;
+    ctx.beginPath();
+    ctx.ellipse(px * 0.4, py * 0.4, pr, pr * open, 0, 0, Math.PI * 2);
+    const pg = ctx.createRadialGradient(
+      px*.4 - s*.03, py*.4 - s*.03, 0,
+      px*.4, py*.4, pr
+    );
+    pg.addColorStop(0, `hsl(${this.hue},50%,18%)`);
+    pg.addColorStop(1, '#000');
+    ctx.fillStyle = pg;
+    ctx.fill();
+
+    // main sparkle highlight
+    ctx.globalAlpha = this.alpha * open * 0.92;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(px*.4 - s*.1, py*.4 - s*.12, s*.045, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(px*.4 + s*.06, py*.4 - s*.08, s*.025, 0, Math.PI * 2);
+    ctx.fill();
+
+    // tiny rotating sparkles on iris rim
+    ctx.globalAlpha = this.alpha * open * 0.55;
+    for (let i = 0; i < 4; i++) {
+      const a  = this.sparkAngle + (i / 4) * Math.PI * 2;
+      const sx = px*.4 + Math.cos(a) * ir * 0.75;
+      const sy = py*.4 + Math.sin(a) * ir * 0.75 * open;
+      ctx.fillStyle = `hsl(${(this.hue + i * 35) % 360},100%,90%)`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, s * 0.018, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.restore();
   }
@@ -246,9 +256,9 @@ class NoiseLine {
     const n = 4 + randI(14);
     this.pts = Array.from({ length: n }, () => ({
       x: rand(0, W), y: rand(0, H),
-      vx: rand(-2, 2), vy: rand(-2, 2),
+      vx: rand(-2, 2) * BASE_SPEED, vy: rand(-2, 2) * BASE_SPEED,
     }));
-    this.hue   = rand(0, 360);
+    this.hue   = hshift(rand(0, 360));
     this.alpha = rand(0.04, 0.3);
     this.lw    = rand(0.2, 2.5);
     this.life  = 0;
@@ -276,45 +286,400 @@ class NoiseLine {
   }
 }
 
-// ── DataStream ────────────────────────────────────────────────────────────────
-class DataStream {
+// ── Bubble ────────────────────────────────────────────────────────────────────
+class Bubble {
+  constructor(init) { this.reset(init); }
+  reset(anywhere) {
+    this.x      = rand(0, W);
+    this.y      = anywhere ? rand(0, H) : H + rand(10, 60);
+    this.r      = rand(10, 65);
+    this.vy     = -rand(0.3, 1.2) * BASE_SPEED;
+    this.vx     = rand(-0.4, 0.4);
+    this.hue    = hshift(rand(0, 360));
+    this.alpha  = rand(0.06, 0.35);
+    this.wobble = rand(0, Math.PI * 2);
+    this.life   = 0;
+    this.max    = rand(400, 1000);
+  }
+  tick() {
+    this.wobble += 0.03;
+    this.x += this.vx + Math.sin(this.wobble) * 0.3;
+    this.y += this.vy;
+    this.hue = (this.hue + 0.2) % 360;
+    if (++this.life > this.max || this.y < -this.r * 2) this.reset();
+  }
+  draw(ctx) {
+    const fade = Math.sin(Math.PI * this.life / this.max);
+    ctx.save();
+    ctx.globalAlpha = this.alpha * fade;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    const g = ctx.createRadialGradient(
+      this.x - this.r * 0.3, this.y - this.r * 0.3, this.r * 0.05,
+      this.x, this.y, this.r
+    );
+    g.addColorStop(0,   `hsla(${(this.hue+40)%360},80%,90%,0.4)`);
+    g.addColorStop(0.4, `hsla(${this.hue},70%,60%,0.15)`);
+    g.addColorStop(1,   `hsla(${(this.hue+180)%360},60%,40%,0.35)`);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.strokeStyle = `hsla(${this.hue},70%,80%,0.5)`;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    // inner highlight
+    ctx.globalAlpha = this.alpha * fade * 0.65;
+    ctx.beginPath();
+    ctx.ellipse(
+      this.x - this.r * 0.3, this.y - this.r * 0.3,
+      this.r * 0.22, this.r * 0.14, -0.5, 0, Math.PI * 2
+    );
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ── Ribbon ────────────────────────────────────────────────────────────────────
+class Ribbon {
+  constructor() { this.reset(); }
+  reset() {
+    this.pts = Array.from({ length: 5 }, () => ({
+      x: rand(0, W), y: rand(0, H),
+      vx: rand(-1.2, 1.2) * BASE_SPEED,
+      vy: rand(-1.2, 1.2) * BASE_SPEED,
+    }));
+    this.hue   = hshift(rand(0, 360));
+    this.alpha = rand(0.05, 0.3);
+    this.lw    = rand(1, 5);
+    this.life  = 0;
+    this.max   = rand(300, 800);
+  }
+  tick() {
+    this.pts.forEach(p => {
+      p.x = (p.x + p.vx + W) % W;
+      p.y = (p.y + p.vy + H) % H;
+    });
+    this.hue = (this.hue + 0.2) % 360;
+    if (++this.life > this.max) this.reset();
+  }
+  draw(ctx) {
+    if (this.pts.length < 2) return;
+    const fade = Math.sin(Math.PI * this.life / this.max);
+    const last  = this.pts[this.pts.length - 1];
+    const grd   = ctx.createLinearGradient(
+      this.pts[0].x, this.pts[0].y, last.x, last.y
+    );
+    grd.addColorStop(0,   `hsla(${this.hue},80%,65%,0)`);
+    grd.addColorStop(0.5, `hsla(${(this.hue+60)%360},80%,65%,1)`);
+    grd.addColorStop(1,   `hsla(${(this.hue+120)%360},80%,65%,0)`);
+    ctx.save();
+    ctx.globalAlpha = this.alpha * fade;
+    ctx.lineWidth = this.lw;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = grd;
+    ctx.beginPath();
+    ctx.moveTo(this.pts[0].x, this.pts[0].y);
+    for (let i = 1; i < this.pts.length - 1; i++) {
+      const mx = (this.pts[i].x + this.pts[i+1].x) / 2;
+      const my = (this.pts[i].y + this.pts[i+1].y) / 2;
+      ctx.quadraticCurveTo(this.pts[i].x, this.pts[i].y, mx, my);
+    }
+    ctx.lineTo(last.x, last.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── Mandala ───────────────────────────────────────────────────────────────────
+class Mandala {
+  constructor(init) { this.reset(init); }
+  reset() {
+    this.x      = rand(0, W);
+    this.y      = rand(0, H);
+    this.r      = rand(30, 120);
+    this.petals = 3 + randI(6);
+    this.layers = 2 + randI(3);
+    this.rot    = rand(0, Math.PI * 2);
+    this.drot   = rand(-0.008, 0.008);
+    this.hue    = hshift(rand(0, 360));
+    this.alpha  = rand(0.04, 0.28);
+    this.lw     = rand(0.4, 1.8);
+    this.vx     = rand(-0.4, 0.4);
+    this.vy     = rand(-0.4, 0.4);
+    this.life   = 0;
+    this.max    = rand(500, 1200);
+  }
+  tick() {
+    this.rot = (this.rot + this.drot) % (Math.PI * 2);
+    this.hue = (this.hue + 0.1) % 360;
+    this.x   = (this.x + this.vx + W) % W;
+    this.y   = (this.y + this.vy + H) % H;
+    if (++this.life > this.max) this.reset();
+  }
+  draw(ctx) {
+    const fade = Math.sin(Math.PI * this.life / this.max);
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.globalAlpha = this.alpha * fade;
+    for (let layer = 1; layer <= this.layers; layer++) {
+      const lr = this.r * (layer / this.layers);
+      ctx.strokeStyle = `hsl(${(this.hue + layer * 30) % 360},70%,60%)`;
+      ctx.lineWidth = this.lw;
+      for (let i = 0; i < this.petals; i++) {
+        const a  = (i / this.petals) * Math.PI * 2;
+        const a2 = a + Math.PI / this.petals;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.bezierCurveTo(
+          Math.cos(a)  * lr * 0.5, Math.sin(a)  * lr * 0.5,
+          Math.cos(a2) * lr * 0.5, Math.sin(a2) * lr * 0.5,
+          Math.cos((a + a2) / 2) * lr, Math.sin((a + a2) / 2) * lr
+        );
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(0, 0, lr * 0.18, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// ── Ripple ────────────────────────────────────────────────────────────────────
+class Ripple {
   constructor() { this.reset(); }
   reset() {
     this.x     = rand(0, W);
-    this.y     = -20;
-    this.chars = Array.from({ length: 6 + randI(20) }, () => pick(GLYPHS));
-    this.size  = rand(9, 22);
-    this.vy    = rand(1, 4);
-    this.hue   = rand(80, 160);  // greenish matrix vibe
-    this.alpha = rand(0.2, 0.7);
+    this.y     = rand(0, H);
+    this.r     = 0;
+    this.maxR  = rand(40, 200);
+    this.speed = rand(0.5, 2) * BASE_SPEED;
+    this.hue   = hshift(rand(0, 360));
+    this.alpha = rand(0.06, 0.35);
+    this.rings = 2 + randI(3);
+    this.lw    = rand(0.4, 1.5);
+    this.life  = 0;
+    this.max   = Math.ceil(this.maxR / this.speed);
   }
   tick() {
-    this.y += this.vy;
-    if (this.y > H + 200) this.reset();
-    // shuffle one char occasionally
-    if (Math.random() < 0.03) {
-      const i = randI(this.chars.length);
-      this.chars[i] = pick(GLYPHS);
-    }
+    this.r   += this.speed;
+    this.hue  = (this.hue + 0.4) % 360;
+    if (++this.life > this.max) this.reset();
   }
   draw(ctx) {
-    ctx.font = `${this.size}px 'Courier New', monospace`;
-    this.chars.forEach((ch, i) => {
-      const brightness = 30 + (this.chars.length - i) / this.chars.length * 50;
-      ctx.globalAlpha = this.alpha * (i === 0 ? 1 : (this.chars.length - i) / this.chars.length);
-      ctx.fillStyle = `hsl(${this.hue},90%,${brightness}%)`;
-      ctx.fillText(ch, this.x, this.y - i * this.size * 1.2);
-    });
+    const pct = this.r / this.maxR;
+    ctx.save();
+    for (let k = 0; k < this.rings; k++) {
+      const kr = this.r * (1 - k * 0.18);
+      if (kr <= 0) continue;
+      ctx.globalAlpha = this.alpha * (1 - pct) * (1 - k * 0.3);
+      ctx.strokeStyle = `hsl(${(this.hue + k * 40) % 360},70%,65%)`;
+      ctx.lineWidth   = this.lw;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, kr, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// ── WaveSweep ─────────────────────────────────────────────────────────────────
+class WaveSweep {
+  constructor() { this.reset(); }
+  reset() {
+    this.phase  = rand(0, Math.PI * 2);
+    this.amp    = rand(20, 120);
+    this.freq   = rand(0.003, 0.015);
+    this.y0     = rand(0, H);
+    this.vy     = rand(-0.5, 0.5) * BASE_SPEED;
+    this.hue    = hshift(rand(0, 360));
+    this.alpha  = rand(0.04, 0.2);
+    this.lw     = rand(0.3, 2);
+    this.dphase = rand(0.01, 0.04);
+    this.life   = 0;
+    this.max    = rand(300, 900);
+  }
+  tick() {
+    this.phase = (this.phase + this.dphase) % (Math.PI * 2);
+    this.y0    = (this.y0 + this.vy + H) % H;
+    this.hue   = (this.hue + 0.3) % 360;
+    if (++this.life > this.max) this.reset();
+  }
+  draw(ctx) {
+    const fade = Math.sin(Math.PI * this.life / this.max);
+    ctx.save();
+    ctx.globalAlpha = this.alpha * fade;
+    ctx.strokeStyle = `hsl(${this.hue},65%,60%)`;
+    ctx.lineWidth   = this.lw;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 3) {
+      const y = this.y0 + Math.sin(x * this.freq + this.phase) * this.amp;
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── Spiral ────────────────────────────────────────────────────────────────────
+class Spiral {
+  constructor(init) { this.reset(init); }
+  reset() {
+    this.x     = rand(0, W);
+    this.y     = rand(0, H);
+    this.turns = 2 + randI(4);
+    this.maxR  = rand(20, 100);
+    this.rot   = rand(0, Math.PI * 2);
+    this.drot  = rand(-0.012, 0.012);
+    this.hue   = hshift(rand(0, 360));
+    this.alpha = rand(0.05, 0.3);
+    this.lw    = rand(0.3, 2);
+    this.dir   = Math.random() > 0.5 ? 1 : -1;
+    this.vx    = rand(-0.5, 0.5);
+    this.vy    = rand(-0.5, 0.5);
+    this.life  = 0;
+    this.max   = rand(400, 1000);
+  }
+  tick() {
+    this.rot = (this.rot + this.drot) % (Math.PI * 2);
+    this.hue = (this.hue + 0.2) % 360;
+    this.x   = (this.x + this.vx + W) % W;
+    this.y   = (this.y + this.vy + H) % H;
+    if (++this.life > this.max) this.reset();
+  }
+  draw(ctx) {
+    const fade  = Math.sin(Math.PI * this.life / this.max);
+    const steps = this.turns * 120;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.globalAlpha = this.alpha * fade;
+    ctx.strokeStyle = `hsl(${this.hue},70%,60%)`;
+    ctx.lineWidth   = this.lw;
+    ctx.lineCap     = 'round';
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const a  = this.dir * (i / steps) * this.turns * Math.PI * 2;
+      const r  = (i / steps) * this.maxR;
+      const px = Math.cos(a) * r;
+      const py = Math.sin(a) * r;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── Tendril ───────────────────────────────────────────────────────────────────
+// A branching organic line that grows from a seed point.
+class Tendril {
+  constructor() { this.reset(); }
+  reset() {
+    this.x     = rand(0, W);
+    this.y     = rand(0, H);
+    this.angle = rand(0, Math.PI * 2);
+    this.len   = 0;
+    this.maxLen = rand(80, 320);
+    this.speed  = rand(1.5, 4) * BASE_SPEED;
+    this.curve  = rand(-0.05, 0.05);
+    this.hue    = hshift(rand(0, 360));
+    this.alpha  = rand(0.06, 0.28);
+    this.lw     = rand(0.4, 2.5);
+    this.pts    = [{ x: this.x, y: this.y }];
+    this.life   = 0;
+    this.max    = rand(200, 700);
+  }
+  tick() {
+    this.angle += this.curve + rand(-0.04, 0.04);
+    const nx = this.pts[this.pts.length-1].x + Math.cos(this.angle) * this.speed;
+    const ny = this.pts[this.pts.length-1].y + Math.sin(this.angle) * this.speed;
+    this.pts.push({ x: nx, y: ny });
+    this.len += this.speed;
+    this.hue = (this.hue + 0.3) % 360;
+    if (++this.life > this.max || this.len > this.maxLen) this.reset();
+  }
+  draw(ctx) {
+    if (this.pts.length < 2) return;
+    const fade = Math.sin(Math.PI * this.life / this.max);
+    ctx.save();
+    ctx.globalAlpha = this.alpha * fade;
+    ctx.strokeStyle = `hsl(${this.hue},65%,58%)`;
+    ctx.lineWidth   = this.lw;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
+    ctx.beginPath();
+    ctx.moveTo(this.pts[0].x, this.pts[0].y);
+    for (let i = 1; i < this.pts.length; i++) ctx.lineTo(this.pts[i].x, this.pts[i].y);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── ArcBurst ──────────────────────────────────────────────────────────────────
+// Radiating arc segments from a centre — like a diffracted star.
+class ArcBurst {
+  constructor() { this.reset(); }
+  reset() {
+    this.x     = rand(0, W);
+    this.y     = rand(0, H);
+    this.r     = rand(20, 110);
+    this.spokes = 5 + randI(9);
+    this.rot   = rand(0, Math.PI * 2);
+    this.drot  = rand(-0.015, 0.015);
+    this.hue   = hshift(rand(0, 360));
+    this.alpha = rand(0.05, 0.3);
+    this.lw    = rand(0.4, 2);
+    this.arc   = rand(0.1, 0.5);
+    this.vx    = rand(-0.5, 0.5);
+    this.vy    = rand(-0.5, 0.5);
+    this.life  = 0;
+    this.max   = rand(300, 900);
+  }
+  tick() {
+    this.rot = (this.rot + this.drot) % (Math.PI * 2);
+    this.hue = (this.hue + 0.18) % 360;
+    this.x   = (this.x + this.vx + W) % W;
+    this.y   = (this.y + this.vy + H) % H;
+    if (++this.life > this.max) this.reset();
+  }
+  draw(ctx) {
+    const fade = Math.sin(Math.PI * this.life / this.max);
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    ctx.globalAlpha = this.alpha * fade;
+    ctx.lineWidth   = this.lw;
+    for (let i = 0; i < this.spokes; i++) {
+      const a0 = (i / this.spokes) * Math.PI * 2;
+      const a1 = a0 + this.arc;
+      ctx.strokeStyle = `hsl(${(this.hue + i * (360/this.spokes)) % 360},75%,62%)`;
+      ctx.beginPath();
+      ctx.arc(0, 0, this.r, a0, a1);
+      ctx.stroke();
+      // radial spoke
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a0) * this.r, Math.sin(a0) * this.r);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 }
 
 // ── build scene ───────────────────────────────────────────────────────────────
-const particles   = Array.from({ length: 350 }, () => new Particle());
-const texts       = Array.from({ length: 90  }, () => new FloatingText(true));
-const shapes      = Array.from({ length: 50  }, () => new Shape(true));
-const eyes        = Array.from({ length: 18  }, () => new Eye());
-const noiseLines  = Array.from({ length: 30  }, () => new NoiseLine());
-const dataStreams  = Array.from({ length: 28  }, () => new DataStream());
+const particles  = Array.from({ length: 280 }, () => new Particle());
+const shapes     = Array.from({ length: 45  }, () => new Shape(true));
+const eyes       = Array.from({ length: 14  }, () => new Eye());
+const noiseLines = Array.from({ length: 22  }, () => new NoiseLine());
+const bubbles    = Array.from({ length: 32  }, () => new Bubble(true));
+const ribbons    = Array.from({ length: 18  }, () => new Ribbon());
+const mandalas   = Array.from({ length: 14  }, () => new Mandala(true));
+const ripples    = Array.from({ length: 20  }, () => new Ripple());
+const waveSweeps = Array.from({ length: 10  }, () => new WaveSweep());
+const spirals    = Array.from({ length: 18  }, () => new Spiral(true));
+const tendrils   = Array.from({ length: 22  }, () => new Tendril());
+const arcBursts  = Array.from({ length: 16  }, () => new ArcBurst());
 
 // ── main loop ─────────────────────────────────────────────────────────────────
 let t = 0;
@@ -330,13 +695,15 @@ function animate() {
   bgCtx.globalAlpha = 1;
 
   noiseLines.forEach(l => { l.tick(); l.draw(bgCtx); });
-  shapes.forEach(s    => { s.tick(); s.draw(bgCtx); });
+  shapes.forEach(s     => { s.tick(); s.draw(bgCtx); });
+  mandalas.forEach(m   => { m.tick(); m.draw(bgCtx); });
+  waveSweeps.forEach(w => { w.tick(); w.draw(bgCtx); });
 
   // scanline glitch
   if (t % 43 === 0) {
     const y = rand(0, H);
     bgCtx.globalAlpha = rand(0.06, 0.18);
-    bgCtx.fillStyle = `hsl(${rand(0,360)},80%,60%)`;
+    bgCtx.fillStyle = `hsl(${hshift(rand(0,360))},80%,60%)`;
     bgCtx.fillRect(0, y, W, rand(1, 5));
     bgCtx.globalAlpha = 1;
   }
@@ -348,9 +715,13 @@ function animate() {
   midCtx.fillRect(0, 0, W, H);
   midCtx.globalAlpha = 1;
 
-  dataStreams.forEach(d => { d.tick(); d.draw(midCtx); });
-  eyes.forEach(e        => { e.tick(t); e.draw(midCtx, t); });
-  texts.forEach(tx      => { tx.tick(); tx.draw(midCtx); });
+  bubbles.forEach(b   => { b.tick();    b.draw(midCtx); });
+  ribbons.forEach(r   => { r.tick();    r.draw(midCtx); });
+  spirals.forEach(sp  => { sp.tick();   sp.draw(midCtx); });
+  arcBursts.forEach(a => { a.tick();    a.draw(midCtx); });
+  tendrils.forEach(td => { td.tick();   td.draw(midCtx); });
+  eyes.forEach(e      => { e.tick(t);   e.draw(midCtx, t); });
+  ripples.forEach(r   => { r.tick();    r.draw(midCtx); });
 
   // ── foreground layer ─────────────────────────────────────────────────────────
   const fgCtx = fg.ctx;
@@ -364,7 +735,7 @@ function animate() {
   // glitch block
   if (t % 29 === 0 && Math.random() < 0.35) {
     fgCtx.globalAlpha = rand(0.08, 0.35);
-    fgCtx.fillStyle = `hsl(${rand(0,360)},100%,60%)`;
+    fgCtx.fillStyle = `hsl(${hshift(rand(0,360))},100%,60%)`;
     fgCtx.fillRect(rand(0,W), rand(0,H), rand(20,220), rand(4,55));
     fgCtx.globalAlpha = 1;
   }
@@ -390,6 +761,7 @@ function animate() {
 // ── resize: rescale canvases to new viewport ──────────────────────────────────
 window.addEventListener('resize', () => {
   const nW = window.innerWidth, nH = window.innerHeight;
+  W = nW; H = nH;
   [bg, mid, fg].forEach(({ el }) => { el.width = nW; el.height = nH; });
 });
 
