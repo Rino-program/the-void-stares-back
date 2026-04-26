@@ -25,10 +25,76 @@ const randI  = (n)    => Math.floor(Math.random() * n);
 const hshift = (h)    => (h + BASE_HUE) % 360;
 const clamp01 = (v)   => Math.max(0, Math.min(1, v));
 const MINUTES_PER_DAY = 24 * 60;
+const TAU = Math.PI * 2;
+let eyeDriftSinX = 0;
+let eyeDriftSinY = 0;
 
 function circularMinuteDistance(a, b) {
   const d = Math.abs(a - b) % MINUTES_PER_DAY;
   return Math.min(d, MINUTES_PER_DAY - d);
+}
+
+function buildShapePath(kind, s) {
+  const p = new Path2D();
+  if (kind === 0) {
+    p.arc(0, 0, s, 0, TAU);
+  } else if (kind === 1) {
+    p.rect(-s / 2, -s / 2, s, s);
+  } else if (kind === 2) {
+    p.moveTo(0, -s);
+    p.lineTo(s * 0.866, s * 0.5);
+    p.lineTo(-s * 0.866, s * 0.5);
+    p.closePath();
+  } else if (kind === 3) {
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * TAU - Math.PI / 2;
+      if (i === 0) p.moveTo(Math.cos(a) * s, Math.sin(a) * s);
+      else p.lineTo(Math.cos(a) * s, Math.sin(a) * s);
+    }
+    p.closePath();
+  } else if (kind === 4) {
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * TAU - Math.PI / 2;
+      const r = i % 2 === 0 ? s : s * 0.38;
+      if (i === 0) p.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      else p.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    p.closePath();
+  } else {
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU;
+      if (i === 0) p.moveTo(Math.cos(a) * s, Math.sin(a) * s);
+      else p.lineTo(Math.cos(a) * s, Math.sin(a) * s);
+    }
+    p.closePath();
+  }
+  return p;
+}
+
+function buildGlyphPath(type, s) {
+  const p = new Path2D();
+  if (type === 0) {
+    p.moveTo(s, 0);
+    p.lineTo(0, s);
+    p.lineTo(-s, 0);
+    p.lineTo(0, -s);
+    p.closePath();
+  } else if (type === 1) {
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU;
+      if (i === 0) p.moveTo(Math.cos(a) * s, Math.sin(a) * s);
+      else p.lineTo(Math.cos(a) * s, Math.sin(a) * s);
+    }
+    p.closePath();
+  } else if (type === 2) {
+    p.arc(0, 0, s, 0, TAU);
+  } else {
+    p.moveTo(s, 0);
+    p.lineTo(-s * 0.5, s * 0.866);
+    p.lineTo(-s * 0.5, -s * 0.866);
+    p.closePath();
+  }
+  return p;
 }
 
 // ── Particle ──────────────────────────────────────────────────────────────────
@@ -55,7 +121,7 @@ class Particle {
     ctx.globalAlpha = this.alpha * (1 - this.life / this.max);
     ctx.fillStyle = `hsl(${this.hue},80%,60%)`;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.arc(this.x, this.y, this.r, 0, TAU);
     ctx.fill();
   }
 }
@@ -76,6 +142,7 @@ class Shape {
     this.alpha = rand(0.04, 0.45);
     this.filled = Math.random() > 0.5;
     this.lw   = rand(0.5, 3);
+    this.path = buildShapePath(this.kind, this.size);
     this.life  = 0;
     this.max   = rand(400, 1000);
   }
@@ -94,33 +161,8 @@ class Shape {
     ctx.strokeStyle = `hsl(${this.hue},60%,55%)`;
     ctx.fillStyle   = `hsl(${(this.hue + 30) % 360},60%,40%)`;
     ctx.lineWidth   = this.lw;
-    ctx.beginPath();
-    const s = this.size;
-    if (this.kind === 0) {
-      ctx.arc(0, 0, s, 0, Math.PI * 2);
-    } else if (this.kind === 1) {
-      ctx.rect(-s/2, -s/2, s, s);
-    } else if (this.kind === 2) {
-      ctx.moveTo(0, -s); ctx.lineTo(s*.866, s*.5); ctx.lineTo(-s*.866, s*.5); ctx.closePath();
-    } else if (this.kind === 3) {
-      for (let i = 0; i < 5; i++) {
-        const a = (i/5)*Math.PI*2 - Math.PI/2;
-        ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a)*s, Math.sin(a)*s);
-      } ctx.closePath();
-    } else if (this.kind === 4) {
-      for (let i = 0; i < 10; i++) {
-        const a = (i/10)*Math.PI*2 - Math.PI/2;
-        const r = i%2 === 0 ? s : s*.38;
-        ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a)*r, Math.sin(a)*r);
-      } ctx.closePath();
-    } else {
-      for (let i = 0; i < 6; i++) {
-        const a = (i/6)*Math.PI*2;
-        ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a)*s, Math.sin(a)*s);
-      } ctx.closePath();
-    }
-    if (this.filled) ctx.fill();
-    ctx.stroke();
+    if (this.filled) ctx.fill(this.path);
+    ctx.stroke(this.path);
     ctx.restore();
   }
 }
@@ -169,8 +211,8 @@ class Eye {
     if (open < 0.03) return;
     const s  = this.size;
     // pupil drifts in a gentle lemniscate (figure-8), never menacing
-    const px = Math.sin(t * 0.0011) * s * 0.22;
-    const py = Math.sin(t * 0.0022) * s * 0.10;
+    const px = eyeDriftSinX * s * 0.22;
+    const py = eyeDriftSinY * s * 0.10;
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.globalAlpha = this.alpha * open;
@@ -229,14 +271,21 @@ class Eye {
 
     // tiny rotating sparkles on iris rim
     ctx.globalAlpha = this.alpha * open * 0.55;
+    let cosA = Math.cos(this.sparkAngle);
+    let sinA = Math.sin(this.sparkAngle);
     for (let i = 0; i < 4; i++) {
-      const a  = this.sparkAngle + (i / 4) * Math.PI * 2;
-      const sx = px*.4 + Math.cos(a) * ir * 0.75;
-      const sy = py*.4 + Math.sin(a) * ir * 0.75 * open;
+      const sx = px*.4 + cosA * ir * 0.75;
+      const sy = py*.4 + sinA * ir * 0.75 * open;
       ctx.fillStyle = `hsl(${(this.hue + i * 35) % 360},100%,90%)`;
       ctx.beginPath();
       ctx.arc(sx, sy, s * 0.018, 0, Math.PI * 2);
       ctx.fill();
+
+      // rotate by PI/2 without additional trig calls
+      const nextCos = -sinA;
+      const nextSin = cosA;
+      cosA = nextCos;
+      sinA = nextSin;
     }
 
     ctx.restore();
@@ -259,11 +308,12 @@ class NoiseLine {
     this.max   = rand(150, 600);
   }
   tick() {
-    this.pts.forEach(p => {
+    for (let i = 0; i < this.pts.length; i++) {
+      const p = this.pts[i];
       p.x += p.vx; p.y += p.vy;
       if (p.x < 0 || p.x > W) p.vx *= -1;
       if (p.y < 0 || p.y > H) p.vy *= -1;
-    });
+    }
     this.hue = (this.hue + 0.35) % 360;
     if (++this.life > this.max) this.reset();
   }
@@ -274,7 +324,11 @@ class NoiseLine {
     ctx.strokeStyle = `hsl(${this.hue},60%,55%)`;
     ctx.lineWidth = this.lw;
     ctx.beginPath();
-    this.pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    for (let i = 0; i < this.pts.length; i++) {
+      const p = this.pts[i];
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
     ctx.stroke();
     ctx.restore();
   }
@@ -349,10 +403,11 @@ class Ribbon {
     this.max   = rand(300, 800);
   }
   tick() {
-    this.pts.forEach(p => {
+    for (let i = 0; i < this.pts.length; i++) {
+      const p = this.pts[i];
       p.x = (p.x + p.vx + W) % W;
       p.y = (p.y + p.vy + H) % H;
-    });
+    }
     this.hue = (this.hue + 0.2) % 360;
     if (++this.life > this.max) this.reset();
   }
@@ -387,6 +442,22 @@ class Ribbon {
 // ── Mandala ───────────────────────────────────────────────────────────────────
 class Mandala {
   constructor(init) { this.reset(init); }
+  _buildGeometry() {
+    const petals = [];
+    for (let i = 0; i < this.petals; i++) {
+      const a = (i / this.petals) * TAU;
+      const a2 = a + Math.PI / this.petals;
+      petals.push({
+        c1x: Math.cos(a) * 0.5,
+        c1y: Math.sin(a) * 0.5,
+        c2x: Math.cos(a2) * 0.5,
+        c2y: Math.sin(a2) * 0.5,
+        ex: Math.cos((a + a2) * 0.5),
+        ey: Math.sin((a + a2) * 0.5),
+      });
+    }
+    this._petalGeom = petals;
+  }
   reset() {
     this.x      = rand(0, W);
     this.y      = rand(0, H);
@@ -400,6 +471,7 @@ class Mandala {
     this.lw     = rand(0.4, 1.8);
     this.vx     = rand(-0.4, 0.4);
     this.vy     = rand(-0.4, 0.4);
+    this._buildGeometry();
     this.life   = 0;
     this.max    = rand(500, 1200);
   }
@@ -420,15 +492,14 @@ class Mandala {
       const lr = this.r * (layer / this.layers);
       ctx.strokeStyle = `hsl(${(this.hue + layer * 30) % 360},70%,60%)`;
       ctx.lineWidth = this.lw;
-      for (let i = 0; i < this.petals; i++) {
-        const a  = (i / this.petals) * Math.PI * 2;
-        const a2 = a + Math.PI / this.petals;
+      for (let i = 0; i < this._petalGeom.length; i++) {
+        const p = this._petalGeom[i];
         ctx.beginPath();
         ctx.moveTo(0, 0);
         ctx.bezierCurveTo(
-          Math.cos(a)  * lr * 0.5, Math.sin(a)  * lr * 0.5,
-          Math.cos(a2) * lr * 0.5, Math.sin(a2) * lr * 0.5,
-          Math.cos((a + a2) / 2) * lr, Math.sin((a + a2) / 2) * lr
+          p.c1x * lr, p.c1y * lr,
+          p.c2x * lr, p.c2y * lr,
+          p.ex * lr, p.ey * lr
         );
         ctx.stroke();
       }
@@ -502,14 +573,25 @@ class WaveSweep {
   }
   draw(ctx) {
     const fade = Math.sin(Math.PI * this.life / this.max);
+    const xStep = 3;
+    const phaseStep = this.freq * xStep;
+    const sinStep = Math.sin(phaseStep);
+    const cosStep = Math.cos(phaseStep);
+    let sinPhase = Math.sin(this.phase);
+    let cosPhase = Math.cos(this.phase);
     ctx.save();
     ctx.globalAlpha = this.alpha * fade;
     ctx.strokeStyle = `hsl(${this.hue},65%,60%)`;
     ctx.lineWidth   = this.lw;
     ctx.beginPath();
-    for (let x = 0; x <= W; x += 3) {
-      const y = this.y0 + Math.sin(x * this.freq + this.phase) * this.amp;
+    for (let x = 0; x <= W; x += xStep) {
+      const y = this.y0 + sinPhase * this.amp;
       x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+
+      const nextSin = sinPhase * cosStep + cosPhase * sinStep;
+      const nextCos = cosPhase * cosStep - sinPhase * sinStep;
+      sinPhase = nextSin;
+      cosPhase = nextCos;
     }
     ctx.stroke();
     ctx.restore();
@@ -519,6 +601,17 @@ class WaveSweep {
 // ── Spiral ────────────────────────────────────────────────────────────────────
 class Spiral {
   constructor(init) { this.reset(init); }
+  _buildPoints() {
+    const steps = this.turns * 120;
+    const pts = new Array(steps + 1);
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const a = this.dir * t * this.turns * TAU;
+      const r = t * this.maxR;
+      pts[i] = { x: Math.cos(a) * r, y: Math.sin(a) * r };
+    }
+    this._pts = pts;
+  }
   reset() {
     this.x     = rand(0, W);
     this.y     = rand(0, H);
@@ -532,6 +625,7 @@ class Spiral {
     this.dir   = Math.random() > 0.5 ? 1 : -1;
     this.vx    = rand(-0.5, 0.5);
     this.vy    = rand(-0.5, 0.5);
+    this._buildPoints();
     this.life  = 0;
     this.max   = rand(400, 1000);
   }
@@ -543,8 +637,7 @@ class Spiral {
     if (++this.life > this.max) this.reset();
   }
   draw(ctx) {
-    const fade  = Math.sin(Math.PI * this.life / this.max);
-    const steps = this.turns * 120;
+    const fade = Math.sin(Math.PI * this.life / this.max);
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
@@ -553,12 +646,10 @@ class Spiral {
     ctx.lineWidth   = this.lw;
     ctx.lineCap     = 'round';
     ctx.beginPath();
-    for (let i = 0; i <= steps; i++) {
-      const a  = this.dir * (i / steps) * this.turns * Math.PI * 2;
-      const r  = (i / steps) * this.maxR;
-      const px = Math.cos(a) * r;
-      const py = Math.sin(a) * r;
-      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    for (let i = 0; i < this._pts.length; i++) {
+      const p = this._pts[i];
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
     }
     ctx.stroke();
     ctx.restore();
@@ -614,6 +705,18 @@ class Tendril {
 // Radiating arc segments from a centre — like a diffracted star.
 class ArcBurst {
   constructor() { this.reset(); }
+  _buildSpokes() {
+    const spokes = new Array(this.spokes);
+    for (let i = 0; i < this.spokes; i++) {
+      const a0 = (i / this.spokes) * TAU;
+      spokes[i] = {
+        a0,
+        ux: Math.cos(a0),
+        uy: Math.sin(a0),
+      };
+    }
+    this._spokes = spokes;
+  }
   reset() {
     this.x     = rand(0, W);
     this.y     = rand(0, H);
@@ -627,6 +730,7 @@ class ArcBurst {
     this.arc   = rand(0.1, 0.5);
     this.vx    = rand(-0.5, 0.5);
     this.vy    = rand(-0.5, 0.5);
+    this._buildSpokes();
     this.life  = 0;
     this.max   = rand(300, 900);
   }
@@ -644,8 +748,9 @@ class ArcBurst {
     ctx.rotate(this.rot);
     ctx.globalAlpha = this.alpha * fade;
     ctx.lineWidth   = this.lw;
-    for (let i = 0; i < this.spokes; i++) {
-      const a0 = (i / this.spokes) * Math.PI * 2;
+    for (let i = 0; i < this._spokes.length; i++) {
+      const spoke = this._spokes[i];
+      const a0 = spoke.a0;
       const a1 = a0 + this.arc;
       ctx.strokeStyle = `hsl(${(this.hue + i * (360/this.spokes)) % 360},75%,62%)`;
       ctx.beginPath();
@@ -654,7 +759,7 @@ class ArcBurst {
       // radial spoke
       ctx.beginPath();
       ctx.moveTo(0, 0);
-      ctx.lineTo(Math.cos(a0) * this.r, Math.sin(a0) * this.r);
+      ctx.lineTo(spoke.ux * this.r, spoke.uy * this.r);
       ctx.stroke();
     }
     ctx.restore();
@@ -691,17 +796,39 @@ class LissajousGhost {
   }
   draw(ctx) {
     const fade = Math.sin(Math.PI * this.life / this.max);
+    const steps = 360;
+    const step = TAU / steps;
+    const ax = this.a * step;
+    const bx = this.b * step;
+    const sinAx = Math.sin(ax);
+    const cosAx = Math.cos(ax);
+    const sinBx = Math.sin(bx);
+    const cosBx = Math.cos(bx);
+    let sx = Math.sin(this.delta);
+    let cx = Math.cos(this.delta);
+    let sy = 0;
+    let cy = 1;
+
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.globalAlpha = this.alpha * fade;
     ctx.strokeStyle = `hsl(${this.hue},75%,62%)`;
     ctx.lineWidth   = this.lw;
     ctx.beginPath();
-    for (let i = 0; i <= 360; i++) {
-      const t_ = (i / 360) * Math.PI * 2;
-      const px = Math.sin(this.a * t_ + this.delta) * this.rx;
-      const py = Math.sin(this.b * t_) * this.ry;
+    for (let i = 0; i <= steps; i++) {
+      const px = sx * this.rx;
+      const py = sy * this.ry;
       i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+
+      const nextSx = sx * cosAx + cx * sinAx;
+      const nextCx = cx * cosAx - sx * sinAx;
+      sx = nextSx;
+      cx = nextCx;
+
+      const nextSy = sy * cosBx + cy * sinBx;
+      const nextCy = cy * cosBx - sy * sinBx;
+      sy = nextSy;
+      cy = nextCy;
     }
     ctx.stroke();
     ctx.restore();
@@ -744,10 +871,11 @@ class PolygonMorph {
     this.max    = rand(500, 1300);
   }
   tick() {
-    this.verts.forEach(v => {
+    for (let i = 0; i < this.verts.length; i++) {
+      const v = this.verts[i];
       v.cx += (v.tx - v.cx) * 0.025;
       v.cy += (v.ty - v.cy) * 0.025;
-    });
+    }
     this.rot = (this.rot + this.drot) % (Math.PI * 2);
     this.hue = (this.hue + 0.12) % 360;
     this.x   = (this.x + this.vx + W) % W;
@@ -765,7 +893,11 @@ class PolygonMorph {
     ctx.fillStyle   = `hsl(${(this.hue + 45) % 360},60%,28%)`;
     ctx.lineWidth   = this.lw;
     ctx.beginPath();
-    this.verts.forEach((v, i) => i ? ctx.lineTo(v.cx, v.cy) : ctx.moveTo(v.cx, v.cy));
+    for (let i = 0; i < this.verts.length; i++) {
+      const v = this.verts[i];
+      if (i === 0) ctx.moveTo(v.cx, v.cy);
+      else ctx.lineTo(v.cx, v.cy);
+    }
     ctx.closePath();
     if (this.filled) ctx.fill();
     ctx.stroke();
@@ -792,24 +924,27 @@ class MeshWeb {
     this.max    = rand(400, 1100);
   }
   tick() {
-    this.nodes.forEach(n => {
+    for (let i = 0; i < this.nodes.length; i++) {
+      const n = this.nodes[i];
       n.x += n.vx; n.y += n.vy;
       if (n.x < 0 || n.x > W) n.vx *= -1;
       if (n.y < 0 || n.y > H) n.vy *= -1;
-    });
+    }
     this.hue = (this.hue + 0.18) % 360;
     if (++this.life > this.max) this.reset();
   }
   draw(ctx) {
     const fade = Math.sin(Math.PI * this.life / this.max);
+    const thresh2 = this.thresh * this.thresh;
     ctx.save();
     ctx.lineWidth = this.lw;
     for (let i = 0; i < this.nodes.length; i++) {
       for (let j = i + 1; j < this.nodes.length; j++) {
         const dx = this.nodes[i].x - this.nodes[j].x;
         const dy = this.nodes[i].y - this.nodes[j].y;
-        const d  = Math.sqrt(dx * dx + dy * dy);
-        if (d > this.thresh) continue;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > thresh2) continue;
+        const d  = Math.sqrt(d2);
         ctx.globalAlpha = this.alpha * fade * (1 - d / this.thresh);
         ctx.strokeStyle = `hsl(${(this.hue + d * 0.4) % 360},65%,60%)`;
         ctx.beginPath();
@@ -845,7 +980,10 @@ class OrbitingDots {
   tick() {
     this.x = (this.x + this.vx + W) % W;
     this.y = (this.y + this.vy + H) % H;
-    this.dots.forEach(d => d.angle = (d.angle + d.speed) % (Math.PI * 2));
+    for (let i = 0; i < this.dots.length; i++) {
+      const d = this.dots[i];
+      d.angle = (d.angle + d.speed) % (Math.PI * 2);
+    }
     this.hue = (this.hue + 0.12) % 360;
     if (++this.life > this.max) this.reset();
   }
@@ -854,14 +992,15 @@ class OrbitingDots {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.globalAlpha = this.alpha * fade;
-    this.dots.forEach((d, i) => {
+    for (let i = 0; i < this.dots.length; i++) {
+      const d = this.dots[i];
       const dx = Math.cos(d.angle) * d.radius;
       const dy = Math.sin(d.angle) * d.radius;
       ctx.fillStyle = `hsl(${(this.hue + i * 60) % 360},80%,60%)`;
       ctx.beginPath();
       ctx.arc(dx, dy, d.size, 0, Math.PI * 2);
       ctx.fill();
-    });
+    }
     ctx.restore();
   }
 }
@@ -926,6 +1065,7 @@ class FloatingGlyph {
     this.lw     = rand(0.4, 1.8);
     this.vx     = rand(-0.5, 0.5);
     this.vy     = rand(-0.5, 0.5);
+    this.path   = buildGlyphPath(this.type, this.size);
     this.life   = 0;
     this.max    = rand(350, 900);
   }
@@ -945,23 +1085,8 @@ class FloatingGlyph {
     ctx.strokeStyle = `hsl(${this.hue},70%,60%)`;
     ctx.fillStyle = `hsl(${(this.hue + 120) % 360},60%,30%)`;
     ctx.lineWidth = this.lw;
-    const s = this.size;
-    ctx.beginPath();
-    if (this.type === 0) {
-      ctx.moveTo(s, 0); ctx.lineTo(0, s); ctx.lineTo(-s, 0); ctx.lineTo(0, -s); ctx.closePath();
-    } else if (this.type === 1) {
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * s, Math.sin(a) * s);
-      }
-      ctx.closePath();
-    } else if (this.type === 2) {
-      ctx.arc(0, 0, s, 0, Math.PI * 2);
-    } else {
-      ctx.moveTo(s, 0); ctx.lineTo(-s * 0.5, s * 0.866); ctx.lineTo(-s * 0.5, -s * 0.866); ctx.closePath();
-    }
-    ctx.fill();
-    ctx.stroke();
+    ctx.fill(this.path);
+    ctx.stroke(this.path);
     ctx.restore();
   }
 }
@@ -970,6 +1095,22 @@ class FloatingGlyph {
 // Spiral arms radiating from center, rotating.
 class VortexSwirl {
   constructor() { this.reset(); }
+  _buildArms() {
+    const steps = 30;
+    const arms = new Array(this.arms);
+    for (let arm = 0; arm < this.arms; arm++) {
+      const armAngle = (arm / this.arms) * TAU;
+      const pts = new Array(steps + 1);
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const r = this.radius * t;
+        const a = armAngle + t * Math.PI * 1.5;
+        pts[i] = { x: Math.cos(a) * r, y: Math.sin(a) * r };
+      }
+      arms[arm] = pts;
+    }
+    this._armPts = arms;
+  }
   reset() {
     this.x      = rand(0, W);
     this.y      = rand(0, H);
@@ -982,6 +1123,7 @@ class VortexSwirl {
     this.lw     = rand(0.5, 2);
     this.vx     = rand(-0.35, 0.35);
     this.vy     = rand(-0.35, 0.35);
+    this._buildArms();
     this.life   = 0;
     this.max    = rand(450, 1000);
   }
@@ -998,19 +1140,15 @@ class VortexSwirl {
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
     ctx.globalAlpha = this.alpha * fade;
-    for (let arm = 0; arm < this.arms; arm++) {
-      const armAngle = (arm / this.arms) * Math.PI * 2;
+    for (let arm = 0; arm < this._armPts.length; arm++) {
+      const armPts = this._armPts[arm];
       ctx.strokeStyle = `hsl(${(this.hue + arm * (360 / this.arms)) % 360},75%,62%)`;
       ctx.lineWidth = this.lw;
       ctx.beginPath();
-      const steps = 30;
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const r = this.radius * t;
-        const a = armAngle + t * Math.PI * 1.5;
-        const px = Math.cos(a) * r;
-        const py = Math.sin(a) * r;
-        ctx[i ? 'lineTo' : 'moveTo'](px, py);
+      for (let i = 0; i < armPts.length; i++) {
+        const p = armPts[i];
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
       }
       ctx.stroke();
     }
@@ -1090,32 +1228,31 @@ const vortexes   = Array.from({ length: 11  }, () => new VortexSwirl());
 const trails     = Array.from({ length: 14  }, () => new ParticleTrail());
 
 const baseSets = [
-  { items: particles,  max: 280, tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: shapes,     max: 45,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: noiseLines, max: 22,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: bubbles,    max: 32,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: ribbons,    max: 18,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: mandalas,   max: 14,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: ripples,    max: 20,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: waveSweeps, max: 10,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: spirals,    max: 18,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: tendrils,   max: 22,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: arcBursts,  max: 16,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: lissajous,  max: 14,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: polyMorphs, max: 14,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: meshWebs,   max: 10,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: orbitDots,  max: 12,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: pulsRings,  max: 10,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: glyphs,     max: 16,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: vortexes,   max: 11,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
-  { items: trails,     max: 14,  tick: o => o.tick(),     draw: (o, ctx) => o.draw(ctx),       spawnAnywhere: true },
+  { items: particles,  max: 280, spawnAnywhere: true },
+  { items: shapes,     max: 45,  spawnAnywhere: true },
+  { items: noiseLines, max: 22,  spawnAnywhere: true },
+  { items: bubbles,    max: 32,  spawnAnywhere: true },
+  { items: ribbons,    max: 18,  spawnAnywhere: true },
+  { items: mandalas,   max: 14,  spawnAnywhere: true },
+  { items: ripples,    max: 20,  spawnAnywhere: true },
+  { items: waveSweeps, max: 10,  spawnAnywhere: true },
+  { items: spirals,    max: 18,  spawnAnywhere: true },
+  { items: tendrils,   max: 22,  spawnAnywhere: true },
+  { items: arcBursts,  max: 16,  spawnAnywhere: true },
+  { items: lissajous,  max: 14,  spawnAnywhere: true },
+  { items: polyMorphs, max: 14,  spawnAnywhere: true },
+  { items: meshWebs,   max: 10,  spawnAnywhere: true },
+  { items: orbitDots,  max: 12,  spawnAnywhere: true },
+  { items: pulsRings,  max: 10,  spawnAnywhere: true },
+  { items: glyphs,     max: 16,  spawnAnywhere: true },
+  { items: vortexes,   max: 11,  spawnAnywhere: true },
+  { items: trails,     max: 14,  spawnAnywhere: true },
 ];
 
 const eyeSet = {
   items: eyes,
   max: 14,
-  tick: o => o.tick(t),
-  draw: (o, ctx) => o.draw(ctx, t),
+  usesTime: true,
   spawnAnywhere: true,
 };
 
@@ -1131,6 +1268,8 @@ let lastMinuteKey = -1;
 let manualMinuteOfDay = null;
 let currentOtherDensity = 0;
 let currentEyeDensity = 0;
+let lastDensityCheckTime = -Infinity;
+const DENSITY_CHECK_INTERVAL_MS = 5000;
 
 function parseTime24(text) {
   const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(text).trim());
@@ -1158,6 +1297,7 @@ window.setVoidTime = function setVoidTime(time24) {
   }
   manualMinuteOfDay = parsed;
   lastMinuteKey = -1;
+  lastDensityCheckTime = -Infinity;
   console.info(`Void time fixed at ${formatMinuteOfDay(parsed)} until changed.`);
   return true;
 };
@@ -1165,6 +1305,7 @@ window.setVoidTime = function setVoidTime(time24) {
 window.clearVoidTime = function clearVoidTime() {
   manualMinuteOfDay = null;
   lastMinuteKey = -1;
+  lastDensityCheckTime = -Infinity;
   console.info('Void time override cleared. Using real clock time.');
 };
 
@@ -1209,18 +1350,24 @@ function markRetiring(obj) {
 }
 
 function applyDensityToSet(set, density) {
-  set.items.forEach(obj => {
+  for (let i = 0; i < set.items.length; i++) {
+    const obj = set.items[i];
     const shouldBeActive = obj.spawnWeight < density;
     if (shouldBeActive) {
       if (!obj.active) activateObject(obj, set.spawnAnywhere);
       else if (obj.retiring) obj.retiring = false;
-      return;
+      continue;
     }
     if (obj.active) markRetiring(obj);
-  });
+  }
 }
 
-function updateSpawnTargetsByMinute() {
+function updateSpawnTargetsByMinute(nowMs) {
+  if (manualMinuteOfDay === null && nowMs - lastDensityCheckTime < DENSITY_CHECK_INTERVAL_MS) {
+    return;
+  }
+  lastDensityCheckTime = nowMs;
+
   const minuteOfDay = getMinuteOfDay();
   if (minuteOfDay === lastMinuteKey) return;
   lastMinuteKey = minuteOfDay;
@@ -1228,29 +1375,52 @@ function updateSpawnTargetsByMinute() {
   currentOtherDensity = getOtherDensity(minuteOfDay);
   currentEyeDensity = getEyeDensity(minuteOfDay);
 
-  baseSets.forEach(set => applyDensityToSet(set, currentOtherDensity));
+  for (let i = 0; i < baseSets.length; i++) {
+    applyDensityToSet(baseSets[i], currentOtherDensity);
+  }
   applyDensityToSet(eyeSet, currentEyeDensity);
 }
 
 function runSet(set, ctx) {
-  set.items.forEach(o => {
-    if (!o.active) return;
-    set.tick(o);
+  for (let i = 0; i < set.items.length; i++) {
+    const o = set.items[i];
+    if (!o.active) continue;
+    if (set.usesTime) o.tick(t);
+    else o.tick();
     if (o.retiring && o.life === 0) {
       o.active = false;
       o.retiring = false;
-      return;
+      continue;
     }
-    set.draw(o, ctx);
-  });
+    if (set.usesTime) o.draw(ctx, t);
+    else o.draw(ctx);
+  }
 }
 
 // ── main loop ─────────────────────────────────────────────────────────────────
 let t = 0;
+const fxTimers = {
+  scanline: 1 + randI(23),
+  chroma: 1 + randI(37),
+  glitchBlock: 1 + randI(22),
+  flash: 1 + randI(83),
+  tear: 1 + randI(47),
+  streak: 1 + randI(59),
+};
 
-function animate() {
+function shouldCheckFx(name, baseFrames) {
+  fxTimers[name]--;
+  if (fxTimers[name] > 0) return false;
+  const jitter = rand(0.78, 1.22);
+  fxTimers[name] = Math.max(1, Math.floor(baseFrames * jitter));
+  return true;
+}
+
+function animate(nowMs = performance.now()) {
   t++;
-  updateSpawnTargetsByMinute();
+  eyeDriftSinX = Math.sin(t * 0.0011);
+  eyeDriftSinY = Math.sin(t * 0.0022);
+  updateSpawnTargetsByMinute(nowMs);
 
   // ── background layer ────────────────────────────────────────────────────────
   const bgCtx = bg.ctx;
@@ -1269,7 +1439,7 @@ function animate() {
   runSet(baseSets[16], bgCtx);  // glyphs
 
   // multi-strip scanline glitch (non-eye density controlled)
-  if (t % 23 === 0 && Math.random() < currentOtherDensity) {
+  if (shouldCheckFx('scanline', 23) && Math.random() < currentOtherDensity) {
     const n = 1 + randI(3);
     for (let i = 0; i < n; i++) {
       bgCtx.globalAlpha = rand(0.04, 0.22) * currentOtherDensity;
@@ -1298,7 +1468,7 @@ function animate() {
   runSet(baseSets[17], midCtx);  // vortexes
 
   // chromatic aberration: non-eye density controlled
-  if (t % 37 === 0 && Math.random() < 0.42 * currentOtherDensity) {
+  if (shouldCheckFx('chroma', 37) && Math.random() < 0.42 * currentOtherDensity) {
     const sy = rand(0, H - 80);
     const sh = rand(15, 75);
     midCtx.save();
@@ -1320,7 +1490,7 @@ function animate() {
   runSet(baseSets[18], fgCtx); // trails
 
   // glitch block (non-eye density controlled)
-  if (t % 22 === 0 && Math.random() < 0.52 * currentOtherDensity) {
+  if (shouldCheckFx('glitchBlock', 22) && Math.random() < 0.52 * currentOtherDensity) {
     fgCtx.save();
     fgCtx.globalAlpha = rand(0.08, 0.4) * currentOtherDensity;
     if (Math.random() < 0.3) fgCtx.globalCompositeOperation = 'screen';
@@ -1330,7 +1500,7 @@ function animate() {
   }
 
   // void flash: full-canvas colour wash (non-eye density controlled)
-  if (t % 83 === 0 && Math.random() < 0.32 * currentOtherDensity) {
+  if (shouldCheckFx('flash', 83) && Math.random() < 0.32 * currentOtherDensity) {
     fgCtx.save();
     fgCtx.globalAlpha = rand(0.04, 0.18) * currentOtherDensity;
     fgCtx.globalCompositeOperation = 'screen';
@@ -1340,7 +1510,7 @@ function animate() {
   }
 
   // horizontal tear (non-eye density controlled)
-  if (t % 47 === 0 && Math.random() < 0.38 * currentOtherDensity) {
+  if (shouldCheckFx('tear', 47) && Math.random() < 0.38 * currentOtherDensity) {
     const y    = rand(0, H);
     const srcX = rand(0, W * 0.5);
     fgCtx.globalAlpha = rand(0.1, 0.45) * currentOtherDensity;
@@ -1350,7 +1520,7 @@ function animate() {
   }
 
   // diagonal streak (non-eye density controlled)
-  if (t % 59 === 0 && Math.random() < 0.28 * currentOtherDensity) {
+  if (shouldCheckFx('streak', 59) && Math.random() < 0.28 * currentOtherDensity) {
     fgCtx.save();
     fgCtx.globalAlpha = rand(0.06, 0.22) * currentOtherDensity;
     fgCtx.strokeStyle = `hsl(${hshift(rand(0, 360))},90%,65%)`;
